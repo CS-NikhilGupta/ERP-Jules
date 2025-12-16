@@ -24,12 +24,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Product } from "@/types";
-import { PackagePlus, RefreshCw } from "lucide-react";
+import { PackagePlus, RefreshCw, PlusCircle } from "lucide-react";
+import { AddProductModal } from "@/components/AddProductModal";
 
 export default function InventoryPage() {
   const { products, currentUser, currentStore, receiveStock, fetchInventory, isLoading } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAddProductOpen, setIsAddProductOpen] = useState(false);
 
   // Form State
   const [amount, setAmount] = useState<number>(0);
@@ -69,10 +71,18 @@ export default function InventoryPage() {
             <h1 className="text-2xl font-bold tracking-tight">Inventory Management</h1>
             {currentStore && <p className="text-muted-foreground">{currentStore.name}</p>}
         </div>
-        <Button variant="outline" size="sm" onClick={() => fetchInventory()} disabled={isLoading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-        </Button>
+        <div className="flex gap-2">
+            {currentUser.role === 'admin' && (
+                <Button onClick={() => setIsAddProductOpen(true)} size="sm">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Add Product
+                </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => fetchInventory()} disabled={isLoading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+            </Button>
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -202,6 +212,8 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AddProductModal open={isAddProductOpen} onOpenChange={setIsAddProductOpen} />
     </div>
   );
 }

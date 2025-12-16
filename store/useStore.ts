@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Product, CartItem, QuoteDetails, Store } from '@/types';
+import { User, Product, CartItem, QuoteDetails, Store, ProductFinish } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
 
 interface AppState {
@@ -15,6 +15,19 @@ interface AppState {
   fetchInventory: () => Promise<void>;
 
   receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => Promise<void>;
+
+  // Add Product
+  addProduct: (
+      productData: {
+          sku: string;
+          name: string;
+          category: string;
+          price_retail: number;
+          imageUrl: string;
+          finish?: string; // Optional input, defaults in logic
+      },
+      initialStock: number
+  ) => Promise<void>;
 
   // Cart Actions
   addToCart: (product: Product, quantity?: number) => void;
@@ -44,7 +57,6 @@ export const useStore = create<AppState>((set, get) => ({
           return;
       }
 
-      // Fetch Profile to get Role and Store ID
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -62,7 +74,6 @@ export const useStore = create<AppState>((set, get) => ({
           });
 
           if (profile.store_id) {
-              // Fetch Store Details
               const { data: store } = await supabase.from('stores').select('*').eq('id', profile.store_id).single();
               if (store) {
                   set({ currentStore: store });
@@ -77,7 +88,6 @@ export const useStore = create<AppState>((set, get) => ({
 
       set({ isLoading: true });
 
-      // 1. Fetch Master Products
       const { data: products, error: prodError } = await supabase.from('products').select('*');
       if (prodError) {
           console.error("Error fetching products", prodError);
@@ -85,7 +95,6 @@ export const useStore = create<AppState>((set, get) => ({
           return;
       }
 
-      // 2. Fetch Inventory for this Store
       const { data: inventory, error: invError } = await supabase
         .from('inventory')
         .select('*')
@@ -97,7 +106,6 @@ export const useStore = create<AppState>((set, get) => ({
           return;
       }
 
-      // 3. Merge Data
       const mergedProducts: Product[] = products.map((p: any) => {
           const invItem = inventory?.find((i: any) => i.product_id === p.id);
           return {
@@ -106,7 +114,7 @@ export const useStore = create<AppState>((set, get) => ({
               name: p.name,
               imageUrl: p.image_url,
               category: p.category,
-              finish: p.finish,
+              finish: p.finish as ProductFinish,
               price_retail: p.price_retail,
               price_dealer: p.price_dealer,
               stock_warehouse: invItem ? invItem.stock_warehouse : 0,
@@ -124,11 +132,9 @@ export const useStore = create<AppState>((set, get) => ({
     const currentProduct = products.find(p => p.id === productId);
     if (!currentProduct) return;
 
-    // Calculate new total
     const newWarehouse = location === 'warehouse' ? currentProduct.stock_warehouse + amount : currentProduct.stock_warehouse;
     const newShowroom = location === 'showroom' ? currentProduct.stock_showroom + amount : currentProduct.stock_showroom;
 
-    // Optimistic Update
     set((state) => ({
         products: state.products.map((p) => {
             if (p.id !== productId) return p;
@@ -140,8 +146,6 @@ export const useStore = create<AppState>((set, get) => ({
         })
     }));
 
-    // DB Update
-    // Check if inventory record exists
     const { data: existingInv } = await supabase
         .from('inventory')
         .select('id')
@@ -162,6 +166,46 @@ export const useStore = create<AppState>((set, get) => ({
             stock_showroom: newShowroom
         });
     }
+  },
+
+  addProduct: async (productData, initialStock) => {
+      const { currentUser, fetchInventory } = get();
+      if (!currentUser?.store_id) throw new Error("No store context");
+
+      // 1. Insert into Products
+      const { data: newProduct, error: prodError } = await supabase
+          .from('products')
+          .insert({
+              sku: productData.sku,
+              name: productData.name,
+              category: productData.category,
+              image_url: productData.imageUrl,
+              price_retail: productData.price_retail,
+              price_dealer: productData.price_retail * 0.5, // Default logic
+              finish: productData.finish || 'Standard'
+          })
+          .select()
+          .single();
+
+      if (prodError) throw prodError;
+      if (!newProduct) throw new Error("Failed to create product");
+
+      // 2. Insert into Inventory for current Store
+      // Assuming initial stock goes to Warehouse for now, or split?
+      // User said "Initial Stock". We'll put it in Warehouse.
+      const { error: invError } = await supabase
+          .from('inventory')
+          .insert({
+              store_id: currentUser.store_id,
+              product_id: newProduct.id,
+              stock_warehouse: initialStock,
+              stock_showroom: 0
+          });
+
+      if (invError) throw invError;
+
+      // 3. Refresh
+      await fetchInventory();
   },
 
   addToCart: (product, quantity = 1) => {
