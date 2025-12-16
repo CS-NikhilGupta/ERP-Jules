@@ -20,7 +20,7 @@ interface SidebarProps {
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
-  const { currentUser, setUserRole } = useStore();
+  const { currentUser } = useStore();
 
   const getNavItems = (role: UserRole) => {
     switch (role) {
@@ -49,6 +49,22 @@ export function Sidebar({ className }: SidebarProps) {
         return [];
     }
   };
+
+  if (!currentUser) {
+      return (
+        <div className={cn("flex h-full w-64 flex-col border-r bg-background p-4", className)}>
+            <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
+                <Link href="/" className="flex items-center gap-2 font-semibold">
+                <Package className="h-6 w-6" />
+                <span className="">Lumina ERP</span>
+                </Link>
+            </div>
+            <div className="mt-8 text-center text-sm text-muted-foreground">
+                Please log in to view menu.
+            </div>
+        </div>
+      )
+  }
 
   const navItems = getNavItems(currentUser.role);
 
@@ -80,24 +96,12 @@ export function Sidebar({ className }: SidebarProps) {
         </nav>
       </div>
       <div className="mt-auto border-t p-4">
-        <div className="mb-4">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Mock Role Switcher</p>
-          <select
-            className="w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-            value={currentUser.role}
-            onChange={(e) => setUserRole(e.target.value as UserRole)}
-          >
-            <option value="admin">Admin</option>
-            <option value="sales">Sales</option>
-            <option value="warehouse">Warehouse</option>
-          </select>
-        </div>
         <div className="flex items-center gap-3 px-2 text-sm text-muted-foreground">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                {currentUser.name.charAt(0)}
+                {currentUser.email ? currentUser.email.charAt(0).toUpperCase() : 'U'}
             </div>
-            <div>
-                <p className="font-medium text-foreground">{currentUser.name}</p>
+            <div className="overflow-hidden">
+                <p className="font-medium text-foreground truncate max-w-[150px]">{currentUser.email}</p>
                 <p className="text-xs">{currentUser.role}</p>
             </div>
         </div>
