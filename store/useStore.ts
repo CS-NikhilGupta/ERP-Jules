@@ -1,14 +1,20 @@
 import { create } from 'zustand';
-import { User, Product, CartItem, QuoteDetails } from '@/types';
+import { User, Product, CartItem, QuoteDetails, Store } from '@/types';
+import { supabase } from '@/lib/supabaseClient';
 
 interface AppState {
-  currentUser: User;
+  currentUser: User | null;
+  currentStore: Store | null;
   products: Product[];
   cart: CartItem[];
   quoteDetails: QuoteDetails;
 
-  receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => void;
-  setUserRole: (role: User['role']) => void;
+  isLoading: boolean;
+
+  fetchUserSession: () => Promise<void>;
+  fetchInventory: () => Promise<void>;
+
+  receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => Promise<void>;
 
   // Cart Actions
   addToCart: (product: Product, quantity?: number) => void;
@@ -18,76 +24,10 @@ interface AppState {
   setQuoteDetails: (details: Partial<QuoteDetails>) => void;
 }
 
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: '1',
-    sku: 'LGT-001',
-    name: 'Crystal Chandelier',
-    imageUrl: 'https://images.unsplash.com/photo-1543508282-6319a3e2621f?q=80&w=2515&auto=format&fit=crop',
-    category: 'Chandelier',
-    finish: 'Gold',
-    price_retail: 1200.00,
-    price_dealer: 600.00,
-    stock_warehouse: 15,
-    stock_showroom: 2,
-  },
-  {
-    id: '2',
-    sku: 'LGT-002',
-    name: 'Vintage Wall Sconce',
-    imageUrl: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?q=80&w=2670&auto=format&fit=crop',
-    category: 'Sconce',
-    finish: 'Brass',
-    price_retail: 250.00,
-    price_dealer: 125.00,
-    stock_warehouse: 45,
-    stock_showroom: 5,
-  },
-  {
-    id: '3',
-    sku: 'LGT-003',
-    name: 'Modern Pendant Light',
-    imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?q=80&w=2535&auto=format&fit=crop',
-    category: 'Pendant',
-    finish: 'Black',
-    price_retail: 350.00,
-    price_dealer: 175.00,
-    stock_warehouse: 30,
-    stock_showroom: 4,
-  },
-  {
-    id: '4',
-    sku: 'LGT-004',
-    name: 'Industrial Floor Lamp',
-    imageUrl: 'https://images.unsplash.com/photo-1513506003013-0806a55a304d?q=80&w=2670&auto=format&fit=crop',
-    category: 'Floor Lamp',
-    finish: 'Nickel',
-    price_retail: 450.00,
-    price_dealer: 225.00,
-    stock_warehouse: 10,
-    stock_showroom: 1,
-  },
-  {
-    id: '5',
-    sku: 'LGT-005',
-    name: 'Art Deco Table Lamp',
-    imageUrl: 'https://images.unsplash.com/photo-1534349762913-961123f206f3?q=80&w=2538&auto=format&fit=crop',
-    category: 'Table Lamp',
-    finish: 'Chrome',
-    price_retail: 180.00,
-    price_dealer: 90.00,
-    stock_warehouse: 20,
-    stock_showroom: 3,
-  },
-];
-
 export const useStore = create<AppState>((set, get) => ({
-  currentUser: {
-    id: 'u1',
-    name: 'Demo User',
-    role: 'admin', // Default role
-  },
-  products: INITIAL_PRODUCTS,
+  currentUser: null,
+  currentStore: null,
+  products: [],
   cart: [],
   quoteDetails: {
     customerName: '',
@@ -95,21 +35,134 @@ export const useStore = create<AppState>((set, get) => ({
     customerAddress: '',
     laborCharges: 0,
   },
+  isLoading: false,
 
-  receiveStock: (productId, amount, location) => set((state) => ({
-    products: state.products.map((p) => {
-      if (p.id !== productId) return p;
-      return {
-        ...p,
-        stock_warehouse: location === 'warehouse' ? p.stock_warehouse + amount : p.stock_warehouse,
-        stock_showroom: location === 'showroom' ? p.stock_showroom + amount : p.stock_showroom,
-      };
-    }),
-  })),
+  fetchUserSession: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+          set({ currentUser: null, currentStore: null });
+          return;
+      }
 
-  setUserRole: (role) => set((state) => ({
-    currentUser: { ...state.currentUser, role }
-  })),
+      // Fetch Profile to get Role and Store ID
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profile) {
+          set({
+              currentUser: {
+                  id: session.user.id,
+                  email: session.user.email!,
+                  role: profile.role as any,
+                  store_id: profile.store_id
+              }
+          });
+
+          if (profile.store_id) {
+              // Fetch Store Details
+              const { data: store } = await supabase.from('stores').select('*').eq('id', profile.store_id).single();
+              if (store) {
+                  set({ currentStore: store });
+              }
+          }
+      }
+  },
+
+  fetchInventory: async () => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) return;
+
+      set({ isLoading: true });
+
+      // 1. Fetch Master Products
+      const { data: products, error: prodError } = await supabase.from('products').select('*');
+      if (prodError) {
+          console.error("Error fetching products", prodError);
+          set({ isLoading: false });
+          return;
+      }
+
+      // 2. Fetch Inventory for this Store
+      const { data: inventory, error: invError } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('store_id', currentUser.store_id);
+
+      if (invError) {
+          console.error("Error fetching inventory", invError);
+          set({ isLoading: false });
+          return;
+      }
+
+      // 3. Merge Data
+      const mergedProducts: Product[] = products.map((p: any) => {
+          const invItem = inventory?.find((i: any) => i.product_id === p.id);
+          return {
+              id: p.id,
+              sku: p.sku,
+              name: p.name,
+              imageUrl: p.image_url,
+              category: p.category,
+              finish: p.finish,
+              price_retail: p.price_retail,
+              price_dealer: p.price_dealer,
+              stock_warehouse: invItem ? invItem.stock_warehouse : 0,
+              stock_showroom: invItem ? invItem.stock_showroom : 0,
+          }
+      });
+
+      set({ products: mergedProducts, isLoading: false });
+  },
+
+  receiveStock: async (productId, amount, location) => {
+    const { currentUser, products } = get();
+    if (!currentUser?.store_id) return;
+
+    const currentProduct = products.find(p => p.id === productId);
+    if (!currentProduct) return;
+
+    // Calculate new total
+    const newWarehouse = location === 'warehouse' ? currentProduct.stock_warehouse + amount : currentProduct.stock_warehouse;
+    const newShowroom = location === 'showroom' ? currentProduct.stock_showroom + amount : currentProduct.stock_showroom;
+
+    // Optimistic Update
+    set((state) => ({
+        products: state.products.map((p) => {
+            if (p.id !== productId) return p;
+            return {
+                ...p,
+                stock_warehouse: newWarehouse,
+                stock_showroom: newShowroom
+            }
+        })
+    }));
+
+    // DB Update
+    // Check if inventory record exists
+    const { data: existingInv } = await supabase
+        .from('inventory')
+        .select('id')
+        .eq('store_id', currentUser.store_id)
+        .eq('product_id', productId)
+        .single();
+
+    if (existingInv) {
+        await supabase.from('inventory').update({
+            stock_warehouse: newWarehouse,
+            stock_showroom: newShowroom
+        }).eq('id', existingInv.id);
+    } else {
+        await supabase.from('inventory').insert({
+            store_id: currentUser.store_id,
+            product_id: productId,
+            stock_warehouse: newWarehouse,
+            stock_showroom: newShowroom
+        });
+    }
+  },
 
   addToCart: (product, quantity = 1) => {
     const { cart } = get();

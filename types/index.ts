@@ -1,9 +1,17 @@
 export type UserRole = 'admin' | 'sales' | 'warehouse';
 
+export interface Store {
+    id: string;
+    name: string;
+    address: string;
+    logo_url: string;
+}
+
 export interface User {
   id: string;
-  name: string;
+  email: string;
   role: UserRole;
+  store_id?: string;
 }
 
 export type ProductFinish = 'Gold' | 'Chrome' | 'Black' | 'Brass' | 'Nickel';
@@ -17,6 +25,7 @@ export interface Product {
   finish: ProductFinish;
   price_retail: number;
   price_dealer: number;
+  // Stock is now derived from Inventory join
   stock_warehouse: number;
   stock_showroom: number;
 }

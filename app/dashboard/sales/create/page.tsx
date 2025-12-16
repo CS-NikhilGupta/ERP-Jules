@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
 import { Product } from "@/types"
 import { PrintableInvoice } from "@/components/PrintableInvoice"
-import { Trash2, Printer, Plus } from "lucide-react"
+import { Trash2, Printer, Plus, RefreshCw } from "lucide-react"
 
 export default function CreateQuotePage() {
     const {
@@ -22,10 +22,19 @@ export default function CreateQuotePage() {
         updateCartItem,
         removeFromCart,
         setQuoteDetails,
-        clearCart
+        clearCart,
+        fetchInventory,
+        isLoading
     } = useStore()
 
     const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null)
+
+    // Ensure we have fresh stock data
+    React.useEffect(() => {
+        // We might want to re-fetch on mount if not already there,
+        // but for now relying on user context or manual refresh is OK.
+        // fetchInventory(); // Optional auto-fetch
+    }, [fetchInventory]);
 
     // Derived State for Calculations
     const subtotal = cart.reduce((sum, item) => {
@@ -50,7 +59,12 @@ export default function CreateQuotePage() {
     return (
         <div className="space-y-6 pb-20">
              <div className="flex items-center justify-between print:hidden">
-                <h1 className="text-2xl font-bold tracking-tight">Create Quote</h1>
+                <div className="flex items-center gap-4">
+                    <h1 className="text-2xl font-bold tracking-tight">Create Quote</h1>
+                    <Button variant="ghost" size="sm" onClick={() => fetchInventory()} disabled={isLoading}>
+                         <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    </Button>
+                </div>
                 <div className="space-x-2">
                      <Button variant="outline" onClick={clearCart} disabled={cart.length === 0}>
                         Clear

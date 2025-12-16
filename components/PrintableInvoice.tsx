@@ -9,7 +9,7 @@ const formatMoney = (amount: number) => {
 }
 
 export function PrintableInvoice() {
-    const { cart, quoteDetails } = useStore()
+    const { cart, quoteDetails, currentStore } = useStore()
 
     // Calculations
     const subtotal = cart.reduce((sum, item) => {
@@ -20,15 +20,19 @@ export function PrintableInvoice() {
     const gst = (subtotal + (quoteDetails.laborCharges || 0)) * 0.18;
     const grandTotal = subtotal + (quoteDetails.laborCharges || 0) + gst;
 
+    const storeName = currentStore?.name || "Prolux Lighting Concepts";
+    const storeAddress = currentStore?.address || "123 Design Avenue, Creative District, NY 10012";
+    // If currentStore has a logo_url, use it, otherwise fall back or hide.
+    // For now we assume logic handles it or we show text.
+
     return (
         <div className="hidden print:block print:w-full p-8 bg-white text-black">
             {/* Header */}
             <div className="flex justify-between items-start mb-8 border-b pb-4">
                 <div>
-                    <h1 className="text-3xl font-bold mb-2">Prolux Lighting Concepts</h1>
-                    <p className="text-sm">123 Design Avenue, Creative District</p>
-                    <p className="text-sm">New York, NY 10012</p>
-                    <p className="text-sm">Phone: (212) 555-0123 | Email: sales@prolux.com</p>
+                    <h1 className="text-3xl font-bold mb-2">{storeName}</h1>
+                    <p className="text-sm max-w-[300px] whitespace-pre-wrap">{storeAddress}</p>
+                    <p className="text-sm mt-1">Phone: (212) 555-0123 | Email: sales@luminaerp.com</p>
                 </div>
                 <div className="text-right">
                     <h2 className="text-2xl font-semibold text-gray-700">QUOTE</h2>
