@@ -1,11 +1,21 @@
 import { create } from 'zustand';
-import { User, Product } from '@/types';
+import { User, Product, CartItem, QuoteDetails } from '@/types';
 
 interface AppState {
   currentUser: User;
   products: Product[];
+  cart: CartItem[];
+  quoteDetails: QuoteDetails;
+
   receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => void;
   setUserRole: (role: User['role']) => void;
+
+  // Cart Actions
+  addToCart: (product: Product, quantity?: number) => void;
+  updateCartItem: (productId: string, updates: Partial<CartItem>) => void;
+  removeFromCart: (productId: string) => void;
+  clearCart: () => void;
+  setQuoteDetails: (details: Partial<QuoteDetails>) => void;
 }
 
 const INITIAL_PRODUCTS: Product[] = [
@@ -71,13 +81,20 @@ const INITIAL_PRODUCTS: Product[] = [
   },
 ];
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   currentUser: {
     id: 'u1',
     name: 'Demo User',
     role: 'admin', // Default role
   },
   products: INITIAL_PRODUCTS,
+  cart: [],
+  quoteDetails: {
+    customerName: '',
+    customerPhone: '',
+    customerAddress: '',
+    laborCharges: 0,
+  },
 
   receiveStock: (productId, amount, location) => set((state) => ({
     products: state.products.map((p) => {
@@ -92,5 +109,40 @@ export const useStore = create<AppState>((set) => ({
 
   setUserRole: (role) => set((state) => ({
     currentUser: { ...state.currentUser, role }
+  })),
+
+  addToCart: (product, quantity = 1) => {
+    const { cart } = get();
+    const existingItem = cart.find((item) => item.id === product.id);
+
+    if (existingItem) {
+      set({
+        cart: cart.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + quantity }
+            : item
+        ),
+      });
+    } else {
+      set({
+        cart: [...cart, { ...product, quantity, discount: 0 }],
+      });
+    }
+  },
+
+  updateCartItem: (productId, updates) => set((state) => ({
+    cart: state.cart.map((item) =>
+      item.id === productId ? { ...item, ...updates } : item
+    ),
+  })),
+
+  removeFromCart: (productId) => set((state) => ({
+    cart: state.cart.filter((item) => item.id !== productId),
+  })),
+
+  clearCart: () => set({ cart: [] }),
+
+  setQuoteDetails: (details) => set((state) => ({
+    quoteDetails: { ...state.quoteDetails, ...details }
   })),
 }));

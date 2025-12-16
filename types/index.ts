@@ -28,3 +28,15 @@ export interface Customer {
   email: string;
   address: string;
 }
+
+export interface CartItem extends Product {
+  quantity: number;
+  discount: number; // Percentage
+}
+
+export interface QuoteDetails {
+  customerName: string;
+  customerPhone: string;
+  customerAddress: string;
+  laborCharges: number;
+}
