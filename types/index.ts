@@ -23,10 +23,15 @@ export interface Product {
   imageUrl: string;
   category: string;
   finish: ProductFinish;
-  price_retail: number;
+  price_retail: number; // This is now MRP (List Price)
   price_dealer: number;
   stock_warehouse: number;
   stock_showroom: number;
+  // New Fields
+  hsn_code?: string;
+  gst_rate: number; // 0, 5, 12, 18, 28
+  cost_price?: number;
+  income_account_id?: string;
 }
 
 export interface Customer {
@@ -71,7 +76,37 @@ export interface OrderItem {
     id: string;
     product_id: string;
     quantity: number;
-    price: number;
+    price: number; // Net Rate (after discount)
     discount: number;
+    tax_rate?: number; // Snapshot of GST rate
+    tax_amount?: number;
     product?: Product; // Joined data
+}
+
+// Accounting Interfaces
+export interface Account {
+    id: string;
+    code: string;
+    name: string;
+    type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+    store_id: string;
+}
+
+export interface JournalEntry {
+    id: string;
+    date: string;
+    reference: string; // e.g., Order #1001
+    description: string;
+    store_id: string;
+    lines?: JournalLine[];
+}
+
+export interface JournalLine {
+    id: string;
+    journal_entry_id: string;
+    account_id: string;
+    description: string;
+    debit: number;
+    credit: number;
+    account?: Account;
 }

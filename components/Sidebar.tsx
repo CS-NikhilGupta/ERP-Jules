@@ -10,7 +10,8 @@ import {
   Truck,
   FileText,
   History,
-  PlusCircle
+  PlusCircle,
+  BookOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/useStore";
@@ -35,6 +36,7 @@ export function Sidebar({ className }: SidebarProps) {
           { name: "Sales History", href: "/dashboard/sales/history", icon: History },
           { name: "Customers", href: "/dashboard/customers", icon: Users },
           { name: "Purchases", href: "/dashboard/purchases", icon: Truck },
+          { name: "Accounting", href: "/dashboard/accounting/journal", icon: BookOpen },
           { name: "Users", href: "/dashboard/users", icon: Users },
           { name: "Settings", href: "/dashboard/settings", icon: Settings },
         ];

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Product, CartItem, QuoteDetails, Store, ProductFinish, Order, Customer, OrderStatus } from '@/types';
+import { User, Product, CartItem, QuoteDetails, Store, ProductFinish, Order, Customer, OrderStatus, Account, JournalEntry } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
 
 interface Analytics {
@@ -17,7 +17,9 @@ interface AppState {
   cart: CartItem[];
   customers: Customer[];
   orders: Order[];
-  quotes: Order[]; // Separate list for quotes
+  quotes: Order[];
+  accounts: Account[];
+  journalEntries: JournalEntry[];
   analytics: Analytics;
   quoteDetails: QuoteDetails;
 
@@ -25,9 +27,11 @@ interface AppState {
 
   fetchUserSession: () => Promise<void>;
   fetchInventory: () => Promise<void>;
-  fetchOrders: () => Promise<void>; // Fetches completed orders
-  fetchQuotes: () => Promise<void>; // Fetches quotes
+  fetchOrders: () => Promise<void>;
+  fetchQuotes: () => Promise<void>;
   fetchCustomers: () => Promise<void>;
+  fetchAccounts: () => Promise<void>;
+  fetchJournalEntries: () => Promise<void>;
   fetchAnalytics: () => Promise<void>;
 
   receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => Promise<void>;
@@ -62,6 +66,8 @@ export const useStore = create<AppState>((set, get) => ({
   customers: [],
   orders: [],
   quotes: [],
+  accounts: [],
+  journalEntries: [],
   quoteDetails: {
     customerName: '',
     customerPhone: '',
@@ -146,6 +152,11 @@ export const useStore = create<AppState>((set, get) => ({
               price_dealer: p.price_dealer,
               stock_warehouse: invItem ? invItem.stock_warehouse : 0,
               stock_showroom: invItem ? invItem.stock_showroom : 0,
+              // New Fields
+              hsn_code: p.hsn_code,
+              gst_rate: p.gst_rate || 0,
+              cost_price: p.cost_price,
+              income_account_id: p.income_account_id
           }
       });
 
@@ -192,10 +203,38 @@ export const useStore = create<AppState>((set, get) => ({
           .from('customers')
           .select('*')
           .order('name', { ascending: true });
-          // Note: Customers might be global or store-specific. Assuming global or all visible for now.
 
       if (!error && customers) {
           set({ customers: customers as any });
+      }
+  },
+
+  fetchAccounts: async () => {
+    const { currentUser } = get();
+    if (!currentUser?.store_id) return;
+
+    const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('store_id', currentUser.store_id);
+
+    if (!error && accounts) {
+        set({ accounts: accounts as any });
+    }
+  },
+
+  fetchJournalEntries: async () => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) return;
+
+      const { data: entries, error } = await supabase
+          .from('journal_entries')
+          .select('*, lines:journal_lines(*, account:accounts(*))')
+          .eq('store_id', currentUser.store_id)
+          .order('date', { ascending: false });
+
+      if (!error && entries) {
+          set({ journalEntries: entries as any });
       }
   },
 
@@ -207,7 +246,7 @@ export const useStore = create<AppState>((set, get) => ({
           .from('customers')
           .insert({
               ...customerData,
-              store_id: currentUser.store_id // Associate with creating store, but might be global
+              store_id: currentUser.store_id
           })
           .select()
           .single();
@@ -223,7 +262,7 @@ export const useStore = create<AppState>((set, get) => ({
           .eq('phone', phone)
           .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+      if (error && error.code !== 'PGRST116') {
           console.error("Search error", error);
       }
       return data;
@@ -257,10 +296,8 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       const salesByPerson: { name: string, total: number }[] = [];
-      // Fetch names for IDs
       if (salesMap.size > 0) {
           const ids = Array.from(salesMap.keys());
-          // Assuming profiles table has id and email/name
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, email')
@@ -268,7 +305,7 @@ export const useStore = create<AppState>((set, get) => ({
 
           profiles?.forEach((p: any) => {
               salesByPerson.push({
-                  name: p.email, // Using email as name for now
+                  name: p.email,
                   total: salesMap.get(p.id) || 0
               });
           });
@@ -278,7 +315,7 @@ export const useStore = create<AppState>((set, get) => ({
           .from('inventory')
           .select('id')
           .eq('store_id', currentUser.store_id)
-          .lt('stock_showroom', 5); // Check showroom stock primarily
+          .lt('stock_showroom', 5);
 
       const lowStockCount = lowStockItems?.length || 0;
 
@@ -302,7 +339,6 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   receiveStock: async (productId, amount, location) => {
-    // ... existing logic ...
     const { currentUser, products } = get();
     if (!currentUser?.store_id) return;
 
@@ -346,7 +382,6 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addProduct: async (productData, initialStock) => {
-      // ... existing logic ...
       const { currentUser, fetchInventory } = get();
       if (!currentUser?.store_id) throw new Error("No store context");
 
@@ -358,8 +393,12 @@ export const useStore = create<AppState>((set, get) => ({
               category: productData.category,
               image_url: productData.imageUrl,
               price_retail: productData.price_retail,
-              price_dealer: productData.price_retail * 0.5,
-              finish: productData.finish || 'Standard'
+              price_dealer: productData.price_dealer,
+              finish: productData.finish || 'Standard',
+              hsn_code: productData.hsn_code,
+              gst_rate: productData.gst_rate,
+              cost_price: productData.cost_price,
+              income_account_id: productData.income_account_id
           })
           .select()
           .single();
@@ -390,7 +429,11 @@ export const useStore = create<AppState>((set, get) => ({
               category: productData.category,
               image_url: productData.imageUrl,
               price_retail: productData.price_retail,
-              finish: productData.finish
+              finish: productData.finish,
+              hsn_code: productData.hsn_code,
+              gst_rate: productData.gst_rate,
+              cost_price: productData.cost_price,
+              income_account_id: productData.income_account_id
           })
           .eq('id', productId);
 
@@ -410,24 +453,40 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   createOrder: async (status: OrderStatus) => {
-      const { currentUser, cart, quoteDetails } = get();
+      const { currentUser, cart, quoteDetails, accounts } = get();
       if (!currentUser?.store_id) throw new Error("No store context");
       if (cart.length === 0) throw new Error("Cart is empty");
 
-      const subtotal = cart.reduce((sum, item) => {
-        const itemTotal = (item.price_retail * item.quantity) * ((100 - item.discount) / 100);
-        return sum + itemTotal;
-      }, 0);
-      const gst = (subtotal + (quoteDetails.laborCharges || 0)) * 0.18;
-      const grandTotal = subtotal + (quoteDetails.laborCharges || 0) + gst;
+      // Calculate totals based on New Formula
+      let subtotalNet = 0;
+      let totalTax = 0;
+
+      const orderItems = cart.map(item => {
+          const netRate = item.price_retail * (1 - item.discount / 100);
+          const taxAmount = netRate * (item.gst_rate / 100);
+
+          subtotalNet += netRate * item.quantity;
+          totalTax += taxAmount * item.quantity;
+
+          return {
+            product_id: item.id,
+            quantity: item.quantity,
+            price: netRate,
+            discount: item.discount,
+            tax_rate: item.gst_rate,
+            tax_amount: taxAmount
+          };
+      });
+
+      const grandTotal = subtotalNet + totalTax + (quoteDetails.laborCharges || 0);
 
       // 1. Insert Order
       const { data: order, error: orderError } = await supabase
           .from('orders')
           .insert({
               store_id: currentUser.store_id,
-              customer_id: quoteDetails.customerId, // Link to real customer
-              customer_info: quoteDetails, // Keep snapshot
+              customer_id: quoteDetails.customerId,
+              customer_info: quoteDetails,
               total: grandTotal,
               status: status,
               salesperson_id: currentUser.id
@@ -438,19 +497,14 @@ export const useStore = create<AppState>((set, get) => ({
       if (orderError) throw orderError;
 
       // 2. Insert Items
-      const orderItems = cart.map(item => ({
-          order_id: order.id,
-          product_id: item.id,
-          quantity: item.quantity,
-          price: item.price_retail,
-          discount: item.discount
-      }));
-
-      const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+      const { error: itemsError } = await supabase.from('order_items').insert(
+          orderItems.map(i => ({ ...i, order_id: order.id }))
+      );
       if (itemsError) throw itemsError;
 
-      // 3. Decrement Stock ONLY if status is 'completed'
+      // 3. Decrement Stock & Create Journal (Completed Only)
       if (status === 'completed') {
+          // A. Stock
           for (const item of cart) {
               const { data: inv } = await supabase
                 .from('inventory')
@@ -460,35 +514,114 @@ export const useStore = create<AppState>((set, get) => ({
                 .single();
 
               if (inv) {
-                  // Decrement SHOWROOM stock per requirements
                   const newStock = Math.max(0, inv.stock_showroom - item.quantity);
                   await supabase.from('inventory').update({ stock_showroom: newStock }).eq('id', inv.id);
+              }
+          }
+
+          // B. Accounting
+          const arAccount = accounts.find(a => a.name === 'Accounts Receivable' || a.type === 'asset');
+          const gstAccount = accounts.find(a => a.name === 'GST Payable' || a.type === 'liability');
+
+          const revenueByAccount: Record<string, number> = {};
+          cart.forEach(item => {
+              const accountId = item.income_account_id || accounts.find(a => a.type === 'income')?.id;
+              if (accountId) {
+                  const netVal = (item.price_retail * (1 - item.discount / 100)) * item.quantity;
+                  revenueByAccount[accountId] = (revenueByAccount[accountId] || 0) + netVal;
+              }
+          });
+
+          if (arAccount && gstAccount) {
+              const { data: entry, error: journalError } = await supabase
+                  .from('journal_entries')
+                  .insert({
+                      date: new Date().toISOString(),
+                      reference: `Order #${order.order_number || order.id.slice(0, 8)}`,
+                      description: `Sales Invoice for ${quoteDetails.customerName}`,
+                      store_id: currentUser.store_id
+                  })
+                  .select()
+                  .single();
+
+              if (!journalError && entry) {
+                  const lines = [];
+
+                  // Debit AR
+                  lines.push({
+                      journal_entry_id: entry.id,
+                      account_id: arAccount.id,
+                      description: 'Accounts Receivable',
+                      debit: grandTotal,
+                      credit: 0
+                  });
+
+                  // Credit GST
+                  if (totalTax > 0) {
+                    lines.push({
+                        journal_entry_id: entry.id,
+                        account_id: gstAccount.id,
+                        description: 'GST Output Tax',
+                        debit: 0,
+                        credit: totalTax
+                    });
+                  }
+
+                  // Credit Revenue
+                  for (const [accId, amount] of Object.entries(revenueByAccount)) {
+                      lines.push({
+                          journal_entry_id: entry.id,
+                          account_id: accId,
+                          description: 'Product Sales Revenue',
+                          debit: 0,
+                          credit: amount
+                      });
+                  }
+
+                  // Credit Labor Revenue
+                  const laborAmount = quoteDetails.laborCharges || 0;
+                  if (laborAmount > 0) {
+                      const serviceAccount = accounts.find(a => a.name.includes('Service') || a.name.includes('Labor')) || accounts.find(a => a.type === 'income');
+                      if (serviceAccount) {
+                          lines.push({
+                              journal_entry_id: entry.id,
+                              account_id: serviceAccount.id,
+                              description: 'Service Revenue',
+                              debit: 0,
+                              credit: laborAmount
+                          });
+                      }
+                  }
+
+                  await supabase.from('journal_lines').insert(lines);
               }
           }
       }
   },
 
   convertQuoteToSale: async (orderId) => {
-      const { currentUser } = get();
+      const { currentUser, accounts, orders } = get();
       if (!currentUser?.store_id) throw new Error("No store context");
 
-      // 1. Update Status
-      const { error } = await supabase
+      // 1. Fetch Order Items
+      const { data: items, error: itemsErr } = await supabase
+        .from('order_items')
+        .select('*, product:products(*)')
+        .eq('order_id', orderId);
+
+      if (itemsErr || !items) throw new Error("Failed to fetch items for conversion");
+
+      // 2. Update Status
+      const { data: order, error } = await supabase
           .from('orders')
           .update({ status: 'completed' })
-          .eq('id', orderId);
+          .eq('id', orderId)
+          .select()
+          .single();
 
       if (error) throw error;
 
-      // 2. Fetch Items
-      const { data: items } = await supabase
-          .from('order_items')
-          .select('*')
-          .eq('order_id', orderId);
-
-      if (!items) return;
-
-      // 3. Decrement Stock (Showroom)
+      // 3. Decrement Stock
       for (const item of items) {
           const { data: inv } = await supabase
             .from('inventory')
@@ -500,6 +633,91 @@ export const useStore = create<AppState>((set, get) => ({
           if (inv) {
               const newStock = Math.max(0, inv.stock_showroom - item.quantity);
               await supabase.from('inventory').update({ stock_showroom: newStock }).eq('id', inv.id);
+          }
+      }
+
+      // 4. Create Journal Entry
+      const arAccount = accounts.find(a => a.name === 'Accounts Receivable' || a.type === 'asset');
+      const gstAccount = accounts.find(a => a.name === 'GST Payable' || a.type === 'liability');
+
+      let totalTax = 0;
+      const revenueByAccount: Record<string, number> = {};
+
+      items.forEach((item: any) => {
+          const netTotal = item.price * item.quantity;
+          totalTax += (item.tax_amount || 0) * item.quantity;
+
+          const accId = item.product?.income_account_id || accounts.find(a => a.type === 'income')?.id;
+          if (accId) {
+              revenueByAccount[accId] = (revenueByAccount[accId] || 0) + netTotal;
+          }
+      });
+
+      if (arAccount && gstAccount && order) {
+          const { data: entry } = await supabase
+              .from('journal_entries')
+              .insert({
+                  date: new Date().toISOString(),
+                  reference: `Order #${order.order_number || order.id.slice(0, 8)}`,
+                  description: `Sales Invoice for ${order.customer_info?.customerName}`,
+                  store_id: currentUser.store_id
+              })
+              .select()
+              .single();
+
+          if (entry) {
+              const lines = [];
+               // Debit AR
+               lines.push({
+                  journal_entry_id: entry.id,
+                  account_id: arAccount.id,
+                  description: 'Accounts Receivable',
+                  debit: order.total,
+                  credit: 0
+              });
+
+               // Credit GST
+               if (totalTax > 0) {
+                    lines.push({
+                        journal_entry_id: entry.id,
+                        account_id: gstAccount.id,
+                        description: 'GST Output Tax',
+                        debit: 0,
+                        credit: totalTax
+                    });
+                }
+
+                // Credit Revenue
+                for (const [accId, amount] of Object.entries(revenueByAccount)) {
+                    lines.push({
+                        journal_entry_id: entry.id,
+                        account_id: accId,
+                        description: 'Product Sales Revenue',
+                        debit: 0,
+                        credit: amount
+                    });
+                }
+
+                // Credit Labor Revenue (assuming order.total includes labor, which it does from createOrder)
+                // We need to calculate labor part from order.total - productTotals?
+                // Or just use quoteDetails if available?
+                // Order object has customer_info which is QuoteDetails.
+                const laborAmount = order.customer_info?.laborCharges || 0;
+
+                if (laborAmount > 0) {
+                    const serviceAccount = accounts.find(a => a.name.includes('Service') || a.name.includes('Labor')) || accounts.find(a => a.type === 'income');
+                    if (serviceAccount) {
+                        lines.push({
+                            journal_entry_id: entry.id,
+                            account_id: serviceAccount.id,
+                            description: 'Service Revenue',
+                            debit: 0,
+                            credit: laborAmount
+                        });
+                    }
+                }
+
+                await supabase.from('journal_lines').insert(lines);
           }
       }
   },

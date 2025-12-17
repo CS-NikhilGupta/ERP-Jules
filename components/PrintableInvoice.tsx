@@ -1,29 +1,29 @@
 import { useStore } from "@/store/useStore"
-
-// Helper for currency since I didn't add it to utils yet
-const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-    }).format(amount);
-}
+import { formatCurrency } from "@/lib/utils"
 
 export function PrintableInvoice() {
     const { cart, quoteDetails, currentStore } = useStore()
 
-    // Calculations
-    const subtotal = cart.reduce((sum, item) => {
-        const itemTotal = (item.price_retail * item.quantity) * ((100 - item.discount) / 100);
-        return sum + itemTotal;
-    }, 0);
+    // Calculations (Mirroring CreateQuotePage)
+    const cartItems = cart.map(item => {
+        const netRate = item.price_retail * (1 - item.discount / 100);
+        const taxAmount = netRate * (item.gst_rate / 100);
+        const total = (netRate + taxAmount) * item.quantity;
+        return {
+            ...item,
+            netRate,
+            taxAmount,
+            lineTotal: total
+        };
+    });
 
-    const gst = (subtotal + (quoteDetails.laborCharges || 0)) * 0.18;
-    const grandTotal = subtotal + (quoteDetails.laborCharges || 0) + gst;
+    const totalTaxable = cartItems.reduce((sum, item) => sum + (item.netRate * item.quantity), 0);
+    const totalGST = cartItems.reduce((sum, item) => sum + (item.taxAmount * item.quantity), 0);
+    const labor = quoteDetails.laborCharges || 0;
+    const grandTotal = totalTaxable + totalGST + labor;
 
     const storeName = currentStore?.name || "Prolux Lighting Concepts";
     const storeAddress = currentStore?.address || "123 Design Avenue, Creative District, NY 10012";
-    // If currentStore has a logo_url, use it, otherwise fall back or hide.
-    // For now we assume logic handles it or we show text.
 
     return (
         <div className="hidden print:block print:w-full p-8 bg-white text-black">
@@ -56,38 +56,38 @@ export function PrintableInvoice() {
                         <th className="text-left py-2">Description</th>
                         <th className="text-right py-2">HSN</th>
                         <th className="text-right py-2">Qty</th>
-                        <th className="text-right py-2">Rate</th>
-                        <th className="text-right py-2">Disc %</th>
+                        <th className="text-right py-2">MRP</th>
+                        <th className="text-right py-2">Disc%</th>
+                        <th className="text-right py-2">Net Rate</th>
+                        <th className="text-right py-2">GST%</th>
                         <th className="text-right py-2">Total</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {cart.map((item) => {
-                         const lineTotal = (item.price_retail * item.quantity) * ((100 - item.discount) / 100);
-                         return (
-                            <tr key={item.id} className="border-b">
-                                <td className="py-2 w-16">
-                                    <div className="relative h-10 w-10 border">
-                                        {/* Using Next Image might be tricky in print if not optimized, but usually fine */}
-                                        <img
-                                            src={item.imageUrl}
-                                            alt={item.name}
-                                            className="h-full w-full object-cover"
-                                        />
-                                    </div>
-                                </td>
-                                <td className="py-2">
-                                    <p className="font-semibold">{item.name}</p>
-                                    <p className="text-xs text-gray-500">SKU: {item.sku} | Finish: {item.finish}</p>
-                                </td>
-                                <td className="text-right py-2 text-gray-500">9405</td>
-                                <td className="text-right py-2">{item.quantity}</td>
-                                <td className="text-right py-2">{formatMoney(item.price_retail)}</td>
-                                <td className="text-right py-2">{item.discount}%</td>
-                                <td className="text-right py-2 font-medium">{formatMoney(lineTotal)}</td>
-                            </tr>
-                         )
-                    })}
+                    {cartItems.map((item) => (
+                        <tr key={item.id} className="border-b">
+                            <td className="py-2 w-16">
+                                <div className="relative h-10 w-10 border">
+                                    <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className="h-full w-full object-cover"
+                                    />
+                                </div>
+                            </td>
+                            <td className="py-2">
+                                <p className="font-semibold">{item.name}</p>
+                                <p className="text-xs text-gray-500">SKU: {item.sku} | Finish: {item.finish}</p>
+                            </td>
+                            <td className="text-right py-2 text-gray-500">{item.hsn_code || '-'}</td>
+                            <td className="text-right py-2">{item.quantity}</td>
+                            <td className="text-right py-2">{formatCurrency(item.price_retail)}</td>
+                            <td className="text-right py-2">{item.discount}%</td>
+                            <td className="text-right py-2">{formatCurrency(item.netRate)}</td>
+                            <td className="text-right py-2">{item.gst_rate}%</td>
+                            <td className="text-right py-2 font-medium">{formatCurrency(item.lineTotal)}</td>
+                        </tr>
+                    ))}
                 </tbody>
             </table>
 
@@ -95,20 +95,20 @@ export function PrintableInvoice() {
             <div className="flex justify-end mb-12">
                 <div className="w-1/3 space-y-2">
                     <div className="flex justify-between text-sm">
-                        <span>Subtotal:</span>
-                        <span>{formatMoney(subtotal)}</span>
+                        <span>Total Taxable Value:</span>
+                        <span>{formatCurrency(totalTaxable)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span>Total GST:</span>
+                        <span>{formatCurrency(totalGST)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                         <span>Labor/Installation:</span>
-                        <span>{formatMoney(quoteDetails.laborCharges || 0)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                        <span>GST (18%):</span>
-                        <span>{formatMoney(gst)}</span>
+                        <span>{formatCurrency(labor)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg border-t pt-2">
                         <span>Grand Total:</span>
-                        <span>{formatMoney(grandTotal)}</span>
+                        <span>{formatCurrency(grandTotal)}</span>
                     </div>
                 </div>
             </div>
