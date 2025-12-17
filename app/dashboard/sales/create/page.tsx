@@ -52,8 +52,28 @@ export default function CreateQuotePage() {
         }
     }
 
-    const handlePrint = () => {
-        window.print();
+    const { createOrder } = useStore();
+    const [isSaving, setIsSaving] = React.useState(false);
+
+    const handleSaveAndPrint = async () => {
+        setIsSaving(true);
+        try {
+            await createOrder();
+            // Wait a moment for state update if any, then print
+            setTimeout(() => {
+                window.print();
+                // Optionally clear cart after print or navigate away
+                // clearCart();
+            }, 500);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                alert("Failed to create order: " + error.message);
+            } else {
+                alert("Failed to create order: Unknown error");
+            }
+        } finally {
+            setIsSaving(false);
+        }
     }
 
     return (
@@ -69,9 +89,9 @@ export default function CreateQuotePage() {
                      <Button variant="outline" onClick={clearCart} disabled={cart.length === 0}>
                         Clear
                      </Button>
-                     <Button onClick={handlePrint} disabled={cart.length === 0}>
+                     <Button onClick={handleSaveAndPrint} disabled={cart.length === 0 || isSaving}>
                         <Printer className="mr-2 h-4 w-4"/>
-                        Print Quote
+                        {isSaving ? "Saving..." : "Save & Print"}
                      </Button>
                 </div>
              </div>

@@ -15,14 +15,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Upload, X } from "lucide-react";
+import { Product } from "@/types";
 
 interface AddProductModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  productToEdit?: Product | null;
 }
 
-export function AddProductModal({ open, onOpenChange }: AddProductModalProps) {
-  const { addProduct } = useStore();
+export function AddProductModal({ open, onOpenChange, productToEdit }: AddProductModalProps) {
+  const { addProduct, updateProduct } = useStore();
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -34,6 +36,35 @@ export function AddProductModal({ open, onOpenChange }: AddProductModalProps) {
   const [price, setPrice] = useState<string>("");
   const [stock, setStock] = useState<string>("0");
   const [finish, setFinish] = useState("");
+
+  // Sync prop changes
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  if (open && !hasInitialized) {
+      // Logic to run when modal opens
+      if (productToEdit) {
+          setSku(productToEdit.sku);
+          setName(productToEdit.name);
+          setCategory(productToEdit.category || "Chandelier");
+          setPrice(productToEdit.price_retail.toString());
+          setFinish(productToEdit.finish || "");
+          setImagePreview(productToEdit.imageUrl);
+          setStock("0");
+      } else {
+          setSku("");
+          setName("");
+          setPrice("");
+          setFinish("");
+          setStock("0");
+          setImagePreview(null);
+          setImageFile(null);
+      }
+      setHasInitialized(true);
+  }
+
+  if (!open && hasInitialized) {
+      setHasInitialized(false);
+  }
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -54,35 +85,46 @@ export function AddProductModal({ open, onOpenChange }: AddProductModalProps) {
       alert("Please fill in all required fields (SKU, Name, Price).");
       return;
     }
-    if (!imageFile) {
+    if (!imageFile && !productToEdit) {
         alert("Please upload an image.");
         return;
     }
 
     setLoading(true);
     try {
-        // 1. Upload Image
-        const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${sku}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-            .from('products')
-            .upload(fileName, imageFile);
+        let publicUrl = productToEdit?.imageUrl || "";
 
-        if (uploadError) throw uploadError;
+        // 1. Upload Image (only if new file)
+        if (imageFile) {
+            const fileExt = imageFile.name.split('.').pop();
+            const fileName = `${sku}-${Date.now()}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+                .from('products')
+                .upload(fileName, imageFile);
 
-        const { data: { publicUrl } } = supabase.storage
-            .from('products')
-            .getPublicUrl(fileName);
+            if (uploadError) throw uploadError;
 
-        // 2. Add Product to DB
-        await addProduct({
+            const { data: urlData } = supabase.storage
+                .from('products')
+                .getPublicUrl(fileName);
+
+            publicUrl = urlData.publicUrl;
+        }
+
+        const productData = {
             sku,
             name,
             category,
             price_retail: parseFloat(price),
             imageUrl: publicUrl,
             finish: finish || undefined
-        }, parseInt(stock) || 0);
+        };
+
+        if (productToEdit) {
+            await updateProduct(productToEdit.id, productData);
+        } else {
+            await addProduct(productData, parseInt(stock) || 0);
+        }
 
         // Reset
         setImageFile(null);
@@ -110,7 +152,7 @@ export function AddProductModal({ open, onOpenChange }: AddProductModalProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Product</DialogTitle>
+          <DialogTitle>{productToEdit ? "Edit Product" : "Add New Product"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
@@ -192,7 +234,7 @@ export function AddProductModal({ open, onOpenChange }: AddProductModalProps) {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={loading}>
-              {loading ? "Saving..." : "Save Product"}
+              {loading ? "Saving..." : (productToEdit ? "Update Product" : "Save Product")}
           </Button>
         </DialogFooter>
       </DialogContent>

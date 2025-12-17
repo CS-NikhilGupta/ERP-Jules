@@ -24,14 +24,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Product } from "@/types";
-import { PackagePlus, RefreshCw, PlusCircle } from "lucide-react";
+import { PackagePlus, RefreshCw, PlusCircle, Edit, Trash2 } from "lucide-react";
 import { AddProductModal } from "@/components/AddProductModal";
 
 export default function InventoryPage() {
-  const { products, currentUser, currentStore, receiveStock, fetchInventory, isLoading } = useStore();
+  const { products, currentUser, currentStore, receiveStock, fetchInventory, isLoading, deleteProduct } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
 
   // Form State
   const [amount, setAmount] = useState<number>(0);
@@ -73,7 +74,7 @@ export default function InventoryPage() {
         </div>
         <div className="flex gap-2">
             {currentUser.role === 'admin' && (
-                <Button onClick={() => setIsAddProductOpen(true)} size="sm">
+                <Button onClick={() => { setProductToEdit(null); setIsAddProductOpen(true); }} size="sm">
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Add Product
                 </Button>
@@ -153,14 +154,39 @@ export default function InventoryPage() {
                     </TableCell>
                     {canReceiveStock && (
                     <TableCell className="text-right">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenReceive(product)}
-                        >
-                        <PackagePlus className="mr-2 h-4 w-4" />
-                        Receive
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenReceive(product)}
+                            >
+                            <PackagePlus className="mr-2 h-4 w-4" />
+                            Receive
+                            </Button>
+
+                            {currentUser.role === 'admin' && (
+                                <>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={() => { setProductToEdit(product); setIsAddProductOpen(true); }}
+                                    >
+                                        <Edit className="h-4 w-4 text-blue-500" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        onClick={() => {
+                                            if (confirm("Are you sure? This will remove the product from ALL stores.")) {
+                                                deleteProduct(product.id);
+                                            }
+                                        }}
+                                    >
+                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                </>
+                            )}
+                        </div>
                     </TableCell>
                     )}
                 </TableRow>
@@ -213,7 +239,11 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
-      <AddProductModal open={isAddProductOpen} onOpenChange={setIsAddProductOpen} />
+      <AddProductModal
+        open={isAddProductOpen}
+        onOpenChange={setIsAddProductOpen}
+        productToEdit={productToEdit}
+      />
     </div>
   );
 }
