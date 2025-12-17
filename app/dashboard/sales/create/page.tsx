@@ -4,14 +4,16 @@ import * as React from "react"
 import Image from "next/image"
 import { useStore } from "@/store/useStore"
 import { ProductCombobox } from "@/components/ui/combobox"
+import { CustomerSearch } from "@/components/CustomerSearch"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
-import { Product } from "@/types"
+import { Product, Customer } from "@/types"
 import { PrintableInvoice } from "@/components/PrintableInvoice"
-import { Trash2, Printer, Plus, RefreshCw } from "lucide-react"
+import { Trash2, Printer, Plus, RefreshCw, Save } from "lucide-react"
+import { formatCurrency } from "@/lib/utils"
 
 export default function CreateQuotePage() {
     const {
@@ -24,17 +26,24 @@ export default function CreateQuotePage() {
         setQuoteDetails,
         clearCart,
         fetchInventory,
+        createOrder,
         isLoading
     } = useStore()
 
     const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null)
+    const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | undefined>(undefined);
+    const [isSaving, setIsSaving] = React.useState(false);
 
-    // Ensure we have fresh stock data
-    React.useEffect(() => {
-        // We might want to re-fetch on mount if not already there,
-        // but for now relying on user context or manual refresh is OK.
-        // fetchInventory(); // Optional auto-fetch
-    }, [fetchInventory]);
+    // Sync selected customer with quote details
+    const handleCustomerSelect = (customer: Customer) => {
+        setSelectedCustomer(customer);
+        setQuoteDetails({
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            customerAddress: customer.address || '',
+            customerId: customer.id
+        });
+    };
 
     // Derived State for Calculations
     const subtotal = cart.reduce((sum, item) => {
@@ -52,19 +61,22 @@ export default function CreateQuotePage() {
         }
     }
 
-    const { createOrder } = useStore();
-    const [isSaving, setIsSaving] = React.useState(false);
-
-    const handleSaveAndPrint = async () => {
+    const handleAction = async (actionType: 'quote' | 'completed') => {
         setIsSaving(true);
         try {
-            await createOrder();
-            // Wait a moment for state update if any, then print
-            setTimeout(() => {
-                window.print();
-                // Optionally clear cart after print or navigate away
-                // clearCart();
-            }, 500);
+            await createOrder(actionType);
+
+            if (actionType === 'quote') {
+                alert("Quote saved successfully!");
+                // Optionally redirect to quotes list
+            } else {
+                 // Wait a moment for state update if any, then print
+                setTimeout(() => {
+                    window.print();
+                    clearCart();
+                    setSelectedCustomer(undefined);
+                }, 500);
+            }
         } catch (error: unknown) {
             if (error instanceof Error) {
                 alert("Failed to create order: " + error.message);
@@ -80,7 +92,7 @@ export default function CreateQuotePage() {
         <div className="space-y-6 pb-20">
              <div className="flex items-center justify-between print:hidden">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-2xl font-bold tracking-tight">Create Quote</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Create Sales / Quote</h1>
                     <Button variant="ghost" size="sm" onClick={() => fetchInventory()} disabled={isLoading}>
                          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                     </Button>
@@ -89,52 +101,46 @@ export default function CreateQuotePage() {
                      <Button variant="outline" onClick={clearCart} disabled={cart.length === 0}>
                         Clear
                      </Button>
-                     <Button onClick={handleSaveAndPrint} disabled={cart.length === 0 || isSaving}>
+                     <Button variant="secondary" onClick={() => handleAction('quote')} disabled={cart.length === 0 || isSaving}>
+                        <Save className="mr-2 h-4 w-4"/>
+                        {isSaving ? "Saving..." : "Save Quote"}
+                     </Button>
+                     <Button onClick={() => handleAction('completed')} disabled={cart.length === 0 || isSaving}>
                         <Printer className="mr-2 h-4 w-4"/>
-                        {isSaving ? "Saving..." : "Save & Print"}
+                        {isSaving ? "Processing..." : "Complete Sale & Print"}
                      </Button>
                 </div>
              </div>
 
-             {/* Customer Details Section */}
-             <Card className="print:hidden">
-                 <CardHeader>
-                     <CardTitle className="text-base">Customer Details</CardTitle>
-                 </CardHeader>
-                 <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                     <div className="space-y-2">
-                         <Label htmlFor="c-name">Name</Label>
-                         <Input
-                            id="c-name"
-                            placeholder="John Doe"
-                            value={quoteDetails.customerName}
-                            onChange={(e) => setQuoteDetails({ customerName: e.target.value })}
-                         />
-                     </div>
-                     <div className="space-y-2">
-                         <Label htmlFor="c-phone">Phone</Label>
-                         <Input
-                            id="c-phone"
-                            placeholder="(555) 123-4567"
-                            value={quoteDetails.customerPhone}
-                            onChange={(e) => setQuoteDetails({ customerPhone: e.target.value })}
-                         />
-                     </div>
-                     <div className="space-y-2">
-                         <Label htmlFor="c-address">Address</Label>
-                         <Input
-                            id="c-address"
-                            placeholder="123 Main St, City"
-                            value={quoteDetails.customerAddress}
-                            onChange={(e) => setQuoteDetails({ customerAddress: e.target.value })}
-                         />
-                     </div>
-                 </CardContent>
-             </Card>
-
              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 print:hidden">
-                {/* LEFT COLUMN: Product Picker */}
+                {/* LEFT COLUMN: Customer & Product */}
                 <div className="lg:col-span-4 space-y-4">
+                     {/* Customer Search Section */}
+                    <Card>
+                         <CardHeader>
+                             <CardTitle className="text-base">Customer Details</CardTitle>
+                         </CardHeader>
+                         <CardContent className="space-y-4">
+                             <CustomerSearch onSelect={handleCustomerSelect} selectedCustomer={selectedCustomer} />
+                             {/* Fallback Inputs if no customer selected or need manual override */}
+                             {!selectedCustomer && (
+                                <div className="space-y-2 pt-4 border-t">
+                                    <div className="text-xs text-muted-foreground mb-2">Or enter manually for one-time:</div>
+                                    <Input
+                                        placeholder="Name"
+                                        value={quoteDetails.customerName}
+                                        onChange={(e) => setQuoteDetails({ customerName: e.target.value })}
+                                    />
+                                    <Input
+                                        placeholder="Phone"
+                                        value={quoteDetails.customerPhone}
+                                        onChange={(e) => setQuoteDetails({ customerPhone: e.target.value })}
+                                    />
+                                </div>
+                             )}
+                         </CardContent>
+                    </Card>
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-base">Find Product</CardTitle>
@@ -164,11 +170,11 @@ export default function CreateQuotePage() {
                                     </div>
                                     <div className="flex justify-between text-sm">
                                         <span>Price:</span>
-                                        <span className="font-medium">${selectedProduct.price_retail.toFixed(2)}</span>
+                                        <span className="font-medium">{formatCurrency(selectedProduct.price_retail)}</span>
                                     </div>
                                     <Button className="w-full" onClick={handleAddToCart} disabled={selectedProduct.stock_showroom < 1}>
                                         <Plus className="mr-2 h-4 w-4"/>
-                                        Add to Quote
+                                        Add to Cart
                                     </Button>
                                     {selectedProduct.stock_showroom < 1 && (
                                         <p className="text-xs text-red-500 text-center">Out of stock in showroom</p>
@@ -219,7 +225,7 @@ export default function CreateQuotePage() {
                                                         {item.name}
                                                         <div className="text-xs text-muted-foreground">{item.sku}</div>
                                                     </TableCell>
-                                                    <TableCell>${item.price_retail}</TableCell>
+                                                    <TableCell>{formatCurrency(item.price_retail)}</TableCell>
                                                     <TableCell>
                                                         <Input
                                                             type="number"
@@ -246,7 +252,7 @@ export default function CreateQuotePage() {
                                                         />
                                                     </TableCell>
                                                     <TableCell className="text-right font-medium">
-                                                        ${lineTotal.toFixed(2)}
+                                                        {formatCurrency(lineTotal)}
                                                     </TableCell>
                                                     <TableCell>
                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => removeFromCart(item.id)}>
@@ -269,12 +275,12 @@ export default function CreateQuotePage() {
                                 <div className="flex flex-col gap-3 items-end">
                                     <div className="flex justify-between w-full max-w-xs text-sm">
                                         <span className="text-muted-foreground">Subtotal:</span>
-                                        <span>${subtotal.toFixed(2)}</span>
+                                        <span>{formatCurrency(subtotal)}</span>
                                     </div>
                                     <div className="flex justify-between w-full max-w-xs items-center gap-4">
                                         <Label htmlFor="labor" className="text-sm text-muted-foreground whitespace-nowrap">Labor / Install:</Label>
                                         <div className="relative w-32">
-                                            <span className="absolute left-2 top-2.5 text-xs text-muted-foreground">$</span>
+                                            <span className="absolute left-2 top-2.5 text-xs text-muted-foreground">₹</span>
                                             <Input
                                                 id="labor"
                                                 type="number"
@@ -287,12 +293,12 @@ export default function CreateQuotePage() {
                                     </div>
                                     <div className="flex justify-between w-full max-w-xs text-sm">
                                         <span className="text-muted-foreground">GST (18%):</span>
-                                        <span>${gst.toFixed(2)}</span>
+                                        <span>{formatCurrency(gst)}</span>
                                     </div>
                                     <div className="w-full max-w-xs border-t pt-2 mt-2">
                                         <div className="flex justify-between font-bold text-lg">
                                             <span>Grand Total:</span>
-                                            <span>${grandTotal.toFixed(2)}</span>
+                                            <span>{formatCurrency(grandTotal)}</span>
                                         </div>
                                     </div>
                                 </div>

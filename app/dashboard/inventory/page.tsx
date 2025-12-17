@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Product } from "@/types";
 import { PackagePlus, RefreshCw, PlusCircle, Edit, Trash2 } from "lucide-react";
 import { AddProductModal } from "@/components/AddProductModal";
+import { formatCurrency } from "@/lib/utils";
 
 export default function InventoryPage() {
   const { products, currentUser, currentStore, receiveStock, fetchInventory, isLoading, deleteProduct } = useStore();
@@ -132,12 +133,12 @@ export default function InventoryPage() {
                     <div className="flex flex-col gap-1">
                         <div className="text-sm">
                             <span className="text-muted-foreground mr-2">Retail:</span>
-                            ${product.price_retail.toFixed(2)}
+                            {formatCurrency(product.price_retail)}
                         </div>
                         {currentUser.role !== 'sales' && (
                             <div className="text-xs text-muted-foreground">
                                 <span className="mr-2">Dealer:</span>
-                                ${product.price_dealer.toFixed(2)}
+                                {formatCurrency(product.price_dealer)}
                             </div>
                         )}
                     </div>

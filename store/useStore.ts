@@ -1,20 +1,13 @@
 import { create } from 'zustand';
-import { User, Product, CartItem, QuoteDetails, Store, ProductFinish } from '@/types';
+import { User, Product, CartItem, QuoteDetails, Store, ProductFinish, Order, Customer, OrderStatus } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
-
-export interface Order {
-    id: string;
-    created_at: string;
-    total: number;
-    customer_info: QuoteDetails;
-    store_id: string;
-}
 
 interface Analytics {
     revenue: number;
     ordersCount: number;
     lowStockCount: number;
     recentOrders: Order[];
+    salesByPerson: { name: string, total: number }[];
 }
 
 interface AppState {
@@ -22,15 +15,19 @@ interface AppState {
   currentStore: Store | null;
   products: Product[];
   cart: CartItem[];
-  quoteDetails: QuoteDetails;
-  orders: Order[]; // For history
+  customers: Customer[];
+  orders: Order[];
+  quotes: Order[]; // Separate list for quotes
   analytics: Analytics;
+  quoteDetails: QuoteDetails;
 
   isLoading: boolean;
 
   fetchUserSession: () => Promise<void>;
   fetchInventory: () => Promise<void>;
-  fetchOrders: () => Promise<void>;
+  fetchOrders: () => Promise<void>; // Fetches completed orders
+  fetchQuotes: () => Promise<void>; // Fetches quotes
+  fetchCustomers: () => Promise<void>;
   fetchAnalytics: () => Promise<void>;
 
   receiveStock: (productId: string, amount: number, location: 'warehouse' | 'showroom') => Promise<void>;
@@ -40,8 +37,14 @@ interface AppState {
   updateProduct: (productId: string, productData: any) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
 
-  // Order Management
-  createOrder: () => Promise<void>;
+  // Customer Management
+  createCustomer: (customerData: Partial<Customer>) => Promise<Customer>;
+  searchCustomerByPhone: (phone: string) => Promise<Customer | null>;
+
+  // Order/Quote Management
+  createOrder: (status: OrderStatus) => Promise<void>;
+  convertQuoteToSale: (orderId: string) => Promise<void>;
+  fetchOrderDetails: (orderId: string) => Promise<void>;
 
   // Cart Actions
   addToCart: (product: Product, quantity?: number) => void;
@@ -56,7 +59,9 @@ export const useStore = create<AppState>((set, get) => ({
   currentStore: null,
   products: [],
   cart: [],
+  customers: [],
   orders: [],
+  quotes: [],
   quoteDetails: {
     customerName: '',
     customerPhone: '',
@@ -67,7 +72,8 @@ export const useStore = create<AppState>((set, get) => ({
       revenue: 0,
       ordersCount: 0,
       lowStockCount: 0,
-      recentOrders: []
+      recentOrders: [],
+      salesByPerson: []
   },
   isLoading: false,
 
@@ -154,6 +160,7 @@ export const useStore = create<AppState>((set, get) => ({
           .from('orders')
           .select('*')
           .eq('store_id', currentUser.store_id)
+          .eq('status', 'completed')
           .order('created_at', { ascending: false });
 
       if (!error && orders) {
@@ -161,15 +168,76 @@ export const useStore = create<AppState>((set, get) => ({
       }
   },
 
+  fetchQuotes: async () => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) return;
+
+      const { data: quotes, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('store_id', currentUser.store_id)
+          .eq('status', 'quote')
+          .order('created_at', { ascending: false });
+
+      if (!error && quotes) {
+          set({ quotes: quotes as any });
+      }
+  },
+
+  fetchCustomers: async () => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) return;
+
+      const { data: customers, error } = await supabase
+          .from('customers')
+          .select('*')
+          .order('name', { ascending: true });
+          // Note: Customers might be global or store-specific. Assuming global or all visible for now.
+
+      if (!error && customers) {
+          set({ customers: customers as any });
+      }
+  },
+
+  createCustomer: async (customerData) => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) throw new Error("No store context");
+
+      const { data, error } = await supabase
+          .from('customers')
+          .insert({
+              ...customerData,
+              store_id: currentUser.store_id // Associate with creating store, but might be global
+          })
+          .select()
+          .single();
+
+      if (error) throw error;
+      return data;
+  },
+
+  searchCustomerByPhone: async (phone) => {
+      const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('phone', phone)
+          .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+          console.error("Search error", error);
+      }
+      return data;
+  },
+
   fetchAnalytics: async () => {
       const { currentUser } = get();
       if (!currentUser?.store_id) return;
 
-      // 1. Fetch Orders for this store
       const { data: orders } = await supabase
           .from('orders')
-          .select('total, created_at')
-          .eq('store_id', currentUser.store_id);
+          .select('total, created_at, status, salesperson_id')
+          .eq('store_id', currentUser.store_id)
+          .eq('status', 'completed');
 
       const revenue = orders?.reduce((acc: number, order: { total: number | null }) => acc + (order.total || 0), 0) || 0;
 
@@ -179,24 +247,46 @@ export const useStore = create<AppState>((set, get) => ({
 
       const ordersThisMonth = orders?.filter((o: { created_at: string }) => new Date(o.created_at).getTime() >= startOfMonth.getTime()).length || 0;
 
-      // 2. Low Stock (Local inventory check)
-      // We need fresh inventory data, so let's use the 'products' state if populated, or fetch logic
-      // Ideally we run a count query on DB, but for now we iterate fetched products
-      // We will assume fetchInventory has run or we run it lightly.
-      // Let's rely on what we have in memory for efficiency or run a quick count.
+      // Calculate Sales by Person
+      const salesMap = new Map<string, number>();
+      orders?.forEach((o: any) => {
+          if (o.salesperson_id) {
+              const current = salesMap.get(o.salesperson_id) || 0;
+              salesMap.set(o.salesperson_id, current + (o.total || 0));
+          }
+      });
+
+      const salesByPerson: { name: string, total: number }[] = [];
+      // Fetch names for IDs
+      if (salesMap.size > 0) {
+          const ids = Array.from(salesMap.keys());
+          // Assuming profiles table has id and email/name
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, email')
+            .in('id', ids);
+
+          profiles?.forEach((p: any) => {
+              salesByPerson.push({
+                  name: p.email, // Using email as name for now
+                  total: salesMap.get(p.id) || 0
+              });
+          });
+      }
+
       const { data: lowStockItems } = await supabase
           .from('inventory')
           .select('id')
           .eq('store_id', currentUser.store_id)
-          .lt('stock_warehouse', 5); // Example threshold
+          .lt('stock_showroom', 5); // Check showroom stock primarily
 
       const lowStockCount = lowStockItems?.length || 0;
 
-      // 3. Recent Orders
       const { data: recentOrders } = await supabase
           .from('orders')
           .select('*')
           .eq('store_id', currentUser.store_id)
+          .eq('status', 'completed')
           .order('created_at', { ascending: false })
           .limit(5);
 
@@ -205,12 +295,14 @@ export const useStore = create<AppState>((set, get) => ({
               revenue,
               ordersCount: ordersThisMonth,
               lowStockCount,
-              recentOrders: (recentOrders as any) || []
+              recentOrders: (recentOrders as any) || [],
+              salesByPerson
           }
       });
   },
 
   receiveStock: async (productId, amount, location) => {
+    // ... existing logic ...
     const { currentUser, products } = get();
     if (!currentUser?.store_id) return;
 
@@ -220,7 +312,6 @@ export const useStore = create<AppState>((set, get) => ({
     const newWarehouse = location === 'warehouse' ? currentProduct.stock_warehouse + amount : currentProduct.stock_warehouse;
     const newShowroom = location === 'showroom' ? currentProduct.stock_showroom + amount : currentProduct.stock_showroom;
 
-    // Optimistic Update
     set((state) => ({
         products: state.products.map((p) => {
             if (p.id !== productId) return p;
@@ -232,7 +323,6 @@ export const useStore = create<AppState>((set, get) => ({
         })
     }));
 
-    // DB Update
     const { data: existingInv } = await supabase
         .from('inventory')
         .select('id')
@@ -256,10 +346,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addProduct: async (productData, initialStock) => {
+      // ... existing logic ...
       const { currentUser, fetchInventory } = get();
       if (!currentUser?.store_id) throw new Error("No store context");
 
-      // 1. Insert into Products
       const { data: newProduct, error: prodError } = await supabase
           .from('products')
           .insert({
@@ -277,7 +367,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (prodError) throw prodError;
       if (!newProduct) throw new Error("Failed to create product");
 
-      // 2. Insert into Inventory
       const { error: invError } = await supabase
           .from('inventory')
           .insert({
@@ -288,14 +377,11 @@ export const useStore = create<AppState>((set, get) => ({
           });
 
       if (invError) throw invError;
-
-      // 3. Refresh
       await fetchInventory();
   },
 
   updateProduct: async (productId, productData) => {
       const { fetchInventory } = get();
-
       const { error } = await supabase
           .from('products')
           .update({
@@ -314,9 +400,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   deleteProduct: async (productId) => {
       const { fetchInventory } = get();
-
-      // Cascade delete handles inventory/order_items if set up in SQL (ON DELETE CASCADE)
-      // My SQL script added ON DELETE CASCADE for inventory.
       const { error } = await supabase
           .from('products')
           .delete()
@@ -326,12 +409,11 @@ export const useStore = create<AppState>((set, get) => ({
       await fetchInventory();
   },
 
-  createOrder: async () => {
-      const { currentUser, cart, quoteDetails, clearCart } = get();
+  createOrder: async (status: OrderStatus) => {
+      const { currentUser, cart, quoteDetails } = get();
       if (!currentUser?.store_id) throw new Error("No store context");
       if (cart.length === 0) throw new Error("Cart is empty");
 
-      // Calculate Total
       const subtotal = cart.reduce((sum, item) => {
         const itemTotal = (item.price_retail * item.quantity) * ((100 - item.discount) / 100);
         return sum + itemTotal;
@@ -344,54 +426,99 @@ export const useStore = create<AppState>((set, get) => ({
           .from('orders')
           .insert({
               store_id: currentUser.store_id,
-              customer_info: quoteDetails,
-              total: grandTotal
+              customer_id: quoteDetails.customerId, // Link to real customer
+              customer_info: quoteDetails, // Keep snapshot
+              total: grandTotal,
+              status: status,
+              salesperson_id: currentUser.id
           })
           .select()
           .single();
 
       if (orderError) throw orderError;
 
-      // 2. Insert Items & Decrement Stock
-      for (const item of cart) {
-          // Insert Item
-          await supabase.from('order_items').insert({
-              order_id: order.id,
-              product_id: item.id,
-              quantity: item.quantity,
-              price: item.price_retail,
-              discount: item.discount
-          });
+      // 2. Insert Items
+      const orderItems = cart.map(item => ({
+          order_id: order.id,
+          product_id: item.id,
+          quantity: item.quantity,
+          price: item.price_retail,
+          discount: item.discount
+      }));
 
-          // Decrement Stock (Prefer RPC for atomic, but read-update-write ok for MVP)
-          // We assume 'Showroom' stock is sold first? Or Warehouse?
-          // Let's assume Showroom for retail sales.
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+      if (itemsError) throw itemsError;
 
-          // Get current stock logic
-          // Ideally we call an RPC function `decrement_stock(product_id, store_id, qty)`
-          // For now, client side logic:
+      // 3. Decrement Stock ONLY if status is 'completed'
+      if (status === 'completed') {
+          for (const item of cart) {
+              const { data: inv } = await supabase
+                .from('inventory')
+                .select('*')
+                .eq('store_id', currentUser.store_id)
+                .eq('product_id', item.id)
+                .single();
 
+              if (inv) {
+                  // Decrement SHOWROOM stock per requirements
+                  const newStock = Math.max(0, inv.stock_showroom - item.quantity);
+                  await supabase.from('inventory').update({ stock_showroom: newStock }).eq('id', inv.id);
+              }
+          }
+      }
+  },
+
+  convertQuoteToSale: async (orderId) => {
+      const { currentUser } = get();
+      if (!currentUser?.store_id) throw new Error("No store context");
+
+      // 1. Update Status
+      const { error } = await supabase
+          .from('orders')
+          .update({ status: 'completed' })
+          .eq('id', orderId);
+
+      if (error) throw error;
+
+      // 2. Fetch Items
+      const { data: items } = await supabase
+          .from('order_items')
+          .select('*')
+          .eq('order_id', orderId);
+
+      if (!items) return;
+
+      // 3. Decrement Stock (Showroom)
+      for (const item of items) {
           const { data: inv } = await supabase
             .from('inventory')
             .select('*')
             .eq('store_id', currentUser.store_id)
-            .eq('product_id', item.id)
+            .eq('product_id', item.product_id)
             .single();
 
           if (inv) {
-              // Simple logic: reduce showroom, then warehouse if needed?
-              // Or just reduce warehouse. User didn't specify.
-              // Let's reduce Warehouse as default "Stock".
-              const newStock = Math.max(0, inv.stock_warehouse - item.quantity);
-              await supabase.from('inventory').update({ stock_warehouse: newStock }).eq('id', inv.id);
+              const newStock = Math.max(0, inv.stock_showroom - item.quantity);
+              await supabase.from('inventory').update({ stock_showroom: newStock }).eq('id', inv.id);
           }
       }
+  },
 
-      // 3. Clear Cart (UI will then print)
-      // Note: We might want to keep the data visible for the print dialog even after "Create Order".
-      // But typically "Save" happens -> Clear -> Redirect or Show Success.
-      // For "Save & Print", we probably shouldn't clear immediately or we lose the print view.
-      // We will handle clearing in the Component after Print is triggered.
+  fetchOrderDetails: async (orderId) => {
+      const { data: items, error } = await supabase
+        .from('order_items')
+        .select('*, product:products(*)')
+        .eq('order_id', orderId);
+
+      if (error) {
+          console.error("Error fetching order details", error);
+          return;
+      }
+
+      set((state) => ({
+          orders: state.orders.map(o => o.id === orderId ? { ...o, items: items as any } : o),
+          quotes: state.quotes.map(q => q.id === orderId ? { ...q, items: items as any } : q)
+      }));
   },
 
   addToCart: (product, quantity = 1) => {

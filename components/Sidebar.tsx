@@ -5,10 +5,12 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
-  ShoppingCart,
   Users,
   Settings,
-  Truck
+  Truck,
+  FileText,
+  History,
+  PlusCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/useStore";
@@ -28,7 +30,10 @@ export function Sidebar({ className }: SidebarProps) {
         return [
           { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
           { name: "Inventory", href: "/dashboard/inventory", icon: Package },
-          { name: "Sales", href: "/dashboard/sales", icon: ShoppingCart },
+          { name: "New Sale/Quote", href: "/dashboard/sales/create", icon: PlusCircle },
+          { name: "Active Quotes", href: "/dashboard/sales/quotes", icon: FileText },
+          { name: "Sales History", href: "/dashboard/sales/history", icon: History },
+          { name: "Customers", href: "/dashboard/customers", icon: Users },
           { name: "Purchases", href: "/dashboard/purchases", icon: Truck },
           { name: "Users", href: "/dashboard/users", icon: Users },
           { name: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -36,14 +41,16 @@ export function Sidebar({ className }: SidebarProps) {
       case 'sales':
         return [
           { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-          { name: "Inventory", href: "/dashboard/inventory", icon: Package }, // Read-only logic handles in page
-          { name: "Sales/Quotes", href: "/dashboard/sales", icon: ShoppingCart },
+          { name: "Inventory", href: "/dashboard/inventory", icon: Package },
+          { name: "New Sale/Quote", href: "/dashboard/sales/create", icon: PlusCircle },
+          { name: "Active Quotes", href: "/dashboard/sales/quotes", icon: FileText },
+          { name: "Sales History", href: "/dashboard/sales/history", icon: History },
           { name: "Customers", href: "/dashboard/customers", icon: Users },
         ];
       case 'warehouse':
         return [
-          { name: "Inventory", href: "/dashboard/inventory", icon: Package }, // Manage Stock
-          { name: "Purchases", href: "/dashboard/purchases", icon: Truck }, // Receiving
+          { name: "Inventory", href: "/dashboard/inventory", icon: Package },
+          { name: "Purchases", href: "/dashboard/purchases", icon: Truck },
         ];
       default:
         return [];

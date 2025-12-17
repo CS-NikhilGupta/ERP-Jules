@@ -1,0 +1,51 @@
+
+> lighting-erp@0.1.0 dev
+> next dev -p 3001
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3001
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1760ms
+ ○ Compiling /dashboard/customers ...
+ ✓ Compiled /dashboard/customers in 6.3s (787 modules)
+ GET /dashboard/customers 200 in 7252ms
+ ✓ Compiled in 932ms (374 modules)
+ ○ Compiling /dashboard/sales/create ...
+ ✓ Compiled /dashboard/sales/create in 4.4s (818 modules)
+ GET /dashboard/sales/create 200 in 4734ms
+ GET /dashboard/customers 200 in 72ms
+ GET /dashboard/sales/create 200 in 36ms
+ GET /dashboard/customers 200 in 34ms
+ GET /dashboard/sales/create 200 in 49ms
+ GET /dashboard/customers 200 in 34ms
+ GET /dashboard/sales/create 200 in 32ms
+ GET /dashboard/customers 200 in 44ms
+ GET /dashboard/sales/create 200 in 56ms
+ GET /dashboard/customers 200 in 37ms
+ GET /dashboard/sales/create 200 in 36ms
+ GET /dashboard/customers 200 in 28ms
+ GET /dashboard/sales/create 200 in 31ms
+ GET /dashboard/customers 200 in 29ms
+ GET /dashboard/sales/create 200 in 29ms
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1513506003013-1924045053b8?auto=format&fit=crop&w=150&q=80 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1513506003013-1924045053b8?auto=format&fit=crop&w=150&q=80 404
+ ○ Compiling /dashboard/sales/quotes ...
+ ✓ Compiled /dashboard/sales/quotes in 649ms (830 modules)
+ GET /dashboard/sales/quotes 200 in 864ms
+ ✓ Compiled in 386ms (844 modules)
+ GET /dashboard/customers 200 in 183ms
+ GET /dashboard/sales/create 200 in 55ms
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1513506003013-1924045053b8?auto=format&fit=crop&w=150&q=80 404
+ ⨯ upstream image response failed for https://images.unsplash.com/photo-1513506003013-1924045053b8?auto=format&fit=crop&w=150&q=80 404
+ GET /dashboard/sales/quotes 200 in 35ms
+ ✓ Compiled in 901ms (830 modules)
+ ✓ Compiled in 376ms (409 modules)
+ ✓ Compiled in 162ms (409 modules)
+ ✓ Compiled in 485ms (818 modules)
+ ✓ Compiled in 273ms (409 modules)
+ ✓ Compiled in 262ms (818 modules)
+ ✓ Compiled in 151ms (409 modules)
+ ✓ Compiled in 181ms (409 modules)
+ ✓ Compiled in 411ms (818 modules)

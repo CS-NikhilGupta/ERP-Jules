@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useStore } from "@/store/useStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, AlertTriangle, TrendingUp } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
 export default function DashboardPage() {
     const { analytics, fetchAnalytics, currentUser, isLoading } = useStore();
@@ -34,7 +35,7 @@ export default function DashboardPage() {
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">${analytics.revenue.toLocaleString()}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(analytics.revenue)}</div>
                         <p className="text-xs text-muted-foreground">Lifetime revenue</p>
                     </CardContent>
                 </Card>
@@ -71,8 +72,30 @@ export default function DashboardPage() {
                 </Card>
             </div>
 
-            {/* Recent Sales */}
+            {/* Analytics Row */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+                <Card className="col-span-3">
+                    <CardHeader>
+                        <CardTitle>Sales by Salesperson</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            {analytics.salesByPerson.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No data available.</p>
+                            ) : (
+                                analytics.salesByPerson.map((person, idx) => (
+                                    <div className="flex items-center justify-between" key={idx}>
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-medium leading-none">{person.name}</p>
+                                        </div>
+                                        <div className="font-medium">{formatCurrency(person.total)}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+
                 <Card className="col-span-4">
                     <CardHeader>
                         <CardTitle>Recent Sales</CardTitle>
@@ -90,7 +113,7 @@ export default function DashboardPage() {
                                                 {order.customer_info?.customerPhone}
                                             </p>
                                         </div>
-                                        <div className="ml-auto font-medium">+${order.total?.toFixed(2)}</div>
+                                        <div className="ml-auto font-medium">+{formatCurrency(order.total || 0)}</div>
                                     </div>
                                 ))
                             )}
